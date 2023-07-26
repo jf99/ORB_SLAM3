@@ -2447,12 +2447,14 @@ void Tracking::StereoInitialization()
 
 void Tracking::MonocularInitialization()
 {
-
+    std::cout << "MonocularInitialization()" << std::endl;
     if(!mbReadyToInitializate)
     {
+        std::cout << "!mbReadyToInitializate" << std::endl;
         // Set Reference Frame
         if(mCurrentFrame.mvKeys.size()>100)
         {
+            std::cout << "enough keys" << std::endl;
 
             mInitialFrame = Frame(mCurrentFrame);
             mLastFrame = Frame(mCurrentFrame);
@@ -2474,16 +2476,17 @@ void Tracking::MonocularInitialization()
             }
 
             mbReadyToInitializate = true;
-
             return;
         }
+        std::cout << "not enough keys" << std::endl;
     }
     else
     {
+        std::cout << "mbReadyToInitializate" << std::endl;
         if (((int)mCurrentFrame.mvKeys.size()<=100)||((mSensor == System::IMU_MONOCULAR)&&(mLastFrame.mTimeStamp-mInitialFrame.mTimeStamp>1.0)))
         {
+            std::cout << "not enough keys" << std::endl;
             mbReadyToInitializate = false;
-
             return;
         }
 
@@ -2494,6 +2497,7 @@ void Tracking::MonocularInitialization()
         // Check if there are enough correspondences
         if(nmatches<100)
         {
+            std::cout << "not enough correspondences" << std::endl;
             mbReadyToInitializate = false;
             return;
         }
@@ -2518,6 +2522,7 @@ void Tracking::MonocularInitialization()
 
             CreateInitialMapMonocular();
         }
+        std::cout << "finished being ready to initialize" << std::endl;
     }
 }
 
@@ -2525,6 +2530,8 @@ void Tracking::MonocularInitialization()
 
 void Tracking::CreateInitialMapMonocular()
 {
+    std::cout << "CreateInitialMapMonocular()" << std::endl;
+
     // Create KeyFrames
     KeyFrame* pKFini = new KeyFrame(mInitialFrame,mpAtlas->GetCurrentMap(),mpKeyFrameDB);
     KeyFrame* pKFcur = new KeyFrame(mCurrentFrame,mpAtlas->GetCurrentMap(),mpKeyFrameDB);
@@ -2588,6 +2595,7 @@ void Tracking::CreateInitialMapMonocular()
 
     if(medianDepth<0 || pKFcur->TrackedMapPoints(1)<50) // TODO Check, originally 100 tracks
     {
+        std::cout << "wrong initilization, resetting" << std::endl;
         Verbose::PrintMess("Wrong initialization, reseting...", Verbose::VERBOSITY_QUIET);
         mpSystem->ResetActiveMap();
         return;
@@ -2646,13 +2654,11 @@ void Tracking::CreateInitialMapMonocular()
     phi *= aux;
 
     mLastFrame = Frame(mCurrentFrame);
-
     mpAtlas->SetReferenceMapPoints(mvpLocalMapPoints);
-
     mpMapDrawer->SetCurrentCameraPose(pKFcur->GetPose());
-
     mpAtlas->GetCurrentMap()->mvpKeyFrameOrigins.push_back(pKFini);
 
+    std::cout << "finally setting state to OK!" << std::endl;
     mState=OK;
 
     initID = pKFcur->mnId;
