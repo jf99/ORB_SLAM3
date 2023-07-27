@@ -1565,7 +1565,7 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
 
 Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp, string filename)
 {
-    std::cout << "GrabImageMonocular()" << std::endl;
+    std::cerr << "GrabImageMonocular()" << std::endl;
     mImGray = im;
     if(mImGray.channels()==3)
     {
@@ -1794,7 +1794,7 @@ void Tracking::ResetFrameIMU()
 
 void Tracking::Track()
 {
-    std::cout << "Tracking::Track()" << std::endl;
+    std::cerr << "Tracking::Track()" << std::endl;
     if (bStepByStep)
     {
         std::cout << "Tracking: Waiting to the next step" << std::endl;
@@ -1818,7 +1818,7 @@ void Tracking::Track()
 
     if(mState!=NO_IMAGES_YET)
     {
-        std::cout << "There are images yet" << std::endl;
+        std::cerr << "There are images yet" << std::endl;
         if(mLastFrame.mTimeStamp>mCurrentFrame.mTimeStamp)
         {
             cerr << "ERROR: Frame with a timestamp older than previous frame detected!" << endl;
@@ -1861,7 +1861,7 @@ void Tracking::Track()
 
     if(mState==NO_IMAGES_YET)
     {
-        std::cout << "no images yet -> not_initialized" << std::endl;
+        std::cerr << "no images yet -> not_initialized" << std::endl;
         mState = NOT_INITIALIZED;
     }
 
@@ -1869,7 +1869,7 @@ void Tracking::Track()
 
     if ((mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD) && !mbCreatedMap)
     {
-        std::cout << "preintegrate IMU" << std::endl;
+        std::cerr << "preintegrate IMU" << std::endl;
 #ifdef REGISTER_TIMES
         std::chrono::steady_clock::time_point time_StartPreIMU = std::chrono::steady_clock::now();
 #endif
@@ -1900,7 +1900,7 @@ void Tracking::Track()
 
     if(mState==NOT_INITIALIZED)
     {
-        std::cout << "NOT_INITIALIZED" << std::endl;
+        std::cerr << "NOT_INITIALIZED" << std::endl;
         if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
         {
             StereoInitialization();
@@ -1925,7 +1925,7 @@ void Tracking::Track()
     }
     else
     {
-        std::cout << "System is initialized. Track Frame." << std::endl;
+        std::cerr << "System is initialized. Track Frame." << std::endl;
         // System is initialized. Track Frame.
         bool bOK;
 
@@ -2451,14 +2451,14 @@ void Tracking::StereoInitialization()
 
 void Tracking::MonocularInitialization()
 {
-    std::cout << "MonocularInitialization()" << std::endl;
+    std::cerr << "MonocularInitialization()" << std::endl;
     if(!mbReadyToInitializate)
     {
-        std::cout << "!mbReadyToInitializate" << std::endl;
+        std::cerr << "!mbReadyToInitializate" << std::endl;
         // Set Reference Frame
         if(mCurrentFrame.mvKeys.size()>100)
         {
-            std::cout << "enough keys" << std::endl;
+            std::cerr << "enough keys" << std::endl;
 
             mInitialFrame = Frame(mCurrentFrame);
             mLastFrame = Frame(mCurrentFrame);
@@ -2482,14 +2482,14 @@ void Tracking::MonocularInitialization()
             mbReadyToInitializate = true;
             return;
         }
-        std::cout << "not enough keys" << std::endl;
+        std::cerr << "not enough keys" << std::endl;
     }
     else
     {
-        std::cout << "mbReadyToInitializate" << std::endl;
+        std::cerr << "mbReadyToInitializate" << std::endl;
         if (((int)mCurrentFrame.mvKeys.size()<=100)||((mSensor == System::IMU_MONOCULAR)&&(mLastFrame.mTimeStamp-mInitialFrame.mTimeStamp>1.0)))
         {
-            std::cout << "not enough keys" << std::endl;
+            std::cerr << "not enough keys" << std::endl;
             mbReadyToInitializate = false;
             return;
         }
@@ -2501,7 +2501,7 @@ void Tracking::MonocularInitialization()
         // Check if there are enough correspondences
         if(nmatches<100)
         {
-            std::cout << "not enough correspondences" << std::endl;
+            std::cerr << "not enough correspondences" << std::endl;
             mbReadyToInitializate = false;
             return;
         }
@@ -2526,7 +2526,7 @@ void Tracking::MonocularInitialization()
 
             CreateInitialMapMonocular();
         }
-        std::cout << "finished being ready to initialize" << std::endl;
+        std::cerr << "finished being ready to initialize" << std::endl;
     }
 }
 
@@ -2534,7 +2534,7 @@ void Tracking::MonocularInitialization()
 
 void Tracking::CreateInitialMapMonocular()
 {
-    std::cout << "CreateInitialMapMonocular()" << std::endl;
+    std::cerr << "CreateInitialMapMonocular()" << std::endl;
 
     // Create KeyFrames
     KeyFrame* pKFini = new KeyFrame(mInitialFrame,mpAtlas->GetCurrentMap(),mpKeyFrameDB);
@@ -2599,7 +2599,7 @@ void Tracking::CreateInitialMapMonocular()
 
     if(medianDepth<0 || pKFcur->TrackedMapPoints(1)<50) // TODO Check, originally 100 tracks
     {
-        std::cout << "wrong initilization, resetting" << std::endl;
+        std::cerr << "wrong initilization, resetting" << std::endl;
         Verbose::PrintMess("Wrong initialization, reseting...", Verbose::VERBOSITY_QUIET);
         mpSystem->ResetActiveMap();
         return;
@@ -2662,7 +2662,7 @@ void Tracking::CreateInitialMapMonocular()
     mpMapDrawer->SetCurrentCameraPose(pKFcur->GetPose());
     mpAtlas->GetCurrentMap()->mvpKeyFrameOrigins.push_back(pKFini);
 
-    std::cout << "finally setting state to OK!" << std::endl;
+    std::cerr << "finally setting state to OK!" << std::endl;
     mState=OK;
 
     initID = pKFcur->mnId;

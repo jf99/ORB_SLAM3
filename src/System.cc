@@ -398,7 +398,7 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
 
 Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
 {
-    std::cout << "System::TrackMonocular()" << std::endl;
+    std::cerr << "System::TrackMonocular()" << std::endl;
     {
         unique_lock<mutex> lock(mMutexReset);
         if(mbShutDown)
@@ -463,7 +463,7 @@ Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, 
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
             mpTracker->GrabImuData(vImuMeas[i_imu]);
 
-    std::cout << "now calling GrabImageMonocular() ..." << std::endl;
+    std::cerr << "now calling GrabImageMonocular() ..." << std::endl;
     Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed,timestamp,filename);
 
     unique_lock<mutex> lock2(mMutexState);
