@@ -1565,6 +1565,7 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
 
 Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp, string filename)
 {
+    std::cout << "GrabImageMonocular()" << std::endl;
     mImGray = im;
     if(mImGray.channels()==3)
     {
@@ -1793,7 +1794,7 @@ void Tracking::ResetFrameIMU()
 
 void Tracking::Track()
 {
-
+    std::cout << "Tracking::Track()" << std::endl;
     if (bStepByStep)
     {
         std::cout << "Tracking: Waiting to the next step" << std::endl;
@@ -1817,6 +1818,7 @@ void Tracking::Track()
 
     if(mState!=NO_IMAGES_YET)
     {
+        std::cout << "There are images yet" << std::endl;
         if(mLastFrame.mTimeStamp>mCurrentFrame.mTimeStamp)
         {
             cerr << "ERROR: Frame with a timestamp older than previous frame detected!" << endl;
@@ -1831,7 +1833,6 @@ void Tracking::Track()
             // cout << "id last: " << mLastFrame.mnId << "    id curr: " << mCurrentFrame.mnId << endl;
             if(mpAtlas->isInertial())
             {
-
                 if(mpAtlas->isImuInitialized())
                 {
                     cout << "Timestamp jump detected. State set to LOST. Reseting IMU integration..." << endl;
@@ -1851,7 +1852,6 @@ void Tracking::Track()
                 }
                 return;
             }
-
         }
     }
 
@@ -1861,6 +1861,7 @@ void Tracking::Track()
 
     if(mState==NO_IMAGES_YET)
     {
+        std::cout << "no images yet -> not_initialized" << std::endl;
         mState = NOT_INITIALIZED;
     }
 
@@ -1868,6 +1869,7 @@ void Tracking::Track()
 
     if ((mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD) && !mbCreatedMap)
     {
+        std::cout << "preintegrate IMU" << std::endl;
 #ifdef REGISTER_TIMES
         std::chrono::steady_clock::time_point time_StartPreIMU = std::chrono::steady_clock::now();
 #endif
@@ -1898,6 +1900,7 @@ void Tracking::Track()
 
     if(mState==NOT_INITIALIZED)
     {
+        std::cout << "NOT_INITIALIZED" << std::endl;
         if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
         {
             StereoInitialization();
@@ -1922,6 +1925,7 @@ void Tracking::Track()
     }
     else
     {
+        std::cout << "System is initialized. Track Frame." << std::endl;
         // System is initialized. Track Frame.
         bool bOK;
 
