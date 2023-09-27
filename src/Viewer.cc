@@ -318,10 +318,10 @@ void Viewer::Run()
         pangolin::FinishFrame();
 
         cv::Mat toShow;
-        cv::Mat im = mpFrameDrawer->DrawFrame(trackedImageScale);
+        cv::Mat im = mpFrameDrawer->DrawFrame(1.0);  // trackedImageScale
 
         if(both){
-            cv::Mat imRight = mpFrameDrawer->DrawRightFrame(trackedImageScale);
+            cv::Mat imRight = mpFrameDrawer->DrawRightFrame(1.0);  // trackedImageScale
             cv::hconcat(im,imRight,toShow);
         }
         else{
