@@ -911,7 +911,7 @@ void Frame::ComputeStereoMatches()
         const int w = 5;
         cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
 
-        int bestDist = INT_MAX;
+        bestDist = INT_MAX;
         int bestincR = 0;
         const int L = 5;
         vector<float> vDists;
