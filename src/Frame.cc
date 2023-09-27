@@ -979,8 +979,8 @@ void Frame::ComputeStereoMatches()
     }
 
     cv::Mat matchImg;
-    cv::drawMatches(extractorL->mvImagePyramid[0], mvKeys,
-                    extractorR->mvImagePyramid[0], mvKeysRight,
+    cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
+                    mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
                     matches, matchImg);
     cv::imshow("matches", matchImg);
     cv::waitKey(10);
