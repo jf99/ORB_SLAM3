@@ -810,6 +810,10 @@ void Frame::ComputeImageBounds(const cv::Mat &imLeft)
 
 void Frame::ComputeStereoMatches()
 {
+    // DEBUG
+    std::vector<cv::DMatch> matches;
+    matches.reserve(mvKeysRight.size());
+
     mvuRight = vector<float>(N,-1.0f);
     mvDepth = vector<float>(N,-1.0f);
 
@@ -879,89 +883,87 @@ void Frame::ComputeStereoMatches()
                 continue;
 
             const float &uR = kpR.pt.x;
+            if(uR < minU || uR > maxU)
+                continue;
 
-            if(uR>=minU && uR<=maxU)
+            const cv::Mat &dR = mDescriptorsRight.row(iR);
+            const int dist = ORBmatcher::DescriptorDistance(dL,dR);
+
+            if(dist < bestDist)
             {
-                const cv::Mat &dR = mDescriptorsRight.row(iR);
-                const int dist = ORBmatcher::DescriptorDistance(dL,dR);
-
-                if(dist<bestDist)
-                {
-                    bestDist = dist;
-                    bestIdxR = iR;
-                }
+                bestDist = dist;
+                bestIdxR = iR;
             }
         }
 
         // Subpixel match by correlation
-        if(bestDist<thOrbDist)
+        if(bestDist >= thOrbDist)
+            continue;
+
+        // coordinates in image pyramid at keypoint scale
+        const float uR0 = mvKeysRight[bestIdxR].pt.x;
+        const float scaleFactor = mvInvScaleFactors[kpL.octave];
+        const float scaleduL = round(kpL.pt.x*scaleFactor);
+        const float scaledvL = round(kpL.pt.y*scaleFactor);
+        const float scaleduR0 = round(uR0*scaleFactor);
+
+        // sliding window search
+        const int w = 5;
+        cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
+
+        int bestDist = INT_MAX;
+        int bestincR = 0;
+        const int L = 5;
+        vector<float> vDists;
+        vDists.resize(2*L+1);
+
+        const float iniu = scaleduR0+L-w;
+        const float endu = scaleduR0+L+w+1;
+        if(iniu<0 || endu >= mpORBextractorRight->mvImagePyramid[kpL.octave].cols)
+            continue;
+
+        for(int incR=-L; incR<=+L; incR++)
         {
-            // coordinates in image pyramid at keypoint scale
-            const float uR0 = mvKeysRight[bestIdxR].pt.x;
-            const float scaleFactor = mvInvScaleFactors[kpL.octave];
-            const float scaleduL = round(kpL.pt.x*scaleFactor);
-            const float scaledvL = round(kpL.pt.y*scaleFactor);
-            const float scaleduR0 = round(uR0*scaleFactor);
+            cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
 
-            // sliding window search
-            const int w = 5;
-            cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
-
-            int bestDist = INT_MAX;
-            int bestincR = 0;
-            const int L = 5;
-            vector<float> vDists;
-            vDists.resize(2*L+1);
-
-            const float iniu = scaleduR0+L-w;
-            const float endu = scaleduR0+L+w+1;
-            if(iniu<0 || endu >= mpORBextractorRight->mvImagePyramid[kpL.octave].cols)
-                continue;
-
-            for(int incR=-L; incR<=+L; incR++)
+            float dist = cv::norm(IL,IR,cv::NORM_L1);
+            if(dist < bestDist)
             {
-                cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
-
-                float dist = cv::norm(IL,IR,cv::NORM_L1);
-                if(dist<bestDist)
-                {
-                    bestDist =  dist;
-                    bestincR = incR;
-                }
-
-                vDists[L+incR] = dist;
+                bestDist =  dist;
+                bestincR = incR;
             }
 
-            if(bestincR==-L || bestincR==L)
-                continue;
-
-            // Sub-pixel match (Parabola fitting)
-            const float dist1 = vDists[L+bestincR-1];
-            const float dist2 = vDists[L+bestincR];
-            const float dist3 = vDists[L+bestincR+1];
-
-            const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));
-
-            if(deltaR<-1 || deltaR>1)
-                continue;
-
-            // Re-scaled coordinate
-            float bestuR = mvScaleFactors[kpL.octave]*((float)scaleduR0+(float)bestincR+deltaR);
-
-            float disparity = (uL-bestuR);
-
-            if(disparity>=minD && disparity<maxD)
-            {
-                if(disparity<=0)
-                {
-                    disparity=0.01;
-                    bestuR = uL-0.01;
-                }
-                mvDepth[iL]=mbf/disparity;
-                mvuRight[iL] = bestuR;
-                vDistIdx.push_back(pair<int,int>(bestDist,iL));
-            }
+            vDists[L+incR] = dist;
         }
+
+        if(bestincR == -L || bestincR == L)
+            continue;
+
+        // Sub-pixel match (Parabola fitting)
+        const float dist1 = vDists[L+bestincR-1];
+        const float dist2 = vDists[L+bestincR];
+        const float dist3 = vDists[L+bestincR+1];
+
+        const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));
+        if(deltaR < -1 || deltaR > 1)
+            continue;
+
+        // Re-scaled coordinate
+        float bestuR = mvScaleFactors[kpL.octave]*((float)scaleduR0+(float)bestincR+deltaR);
+        float disparity = (uL-bestuR);
+
+        if(disparity < minD || disparity >= maxD)
+            continue;
+
+        if(disparity <= 0)
+        {
+            disparity = 0.01;
+            bestuR = uL-0.01;
+        }
+        mvDepth[iL]=mbf/disparity;
+        mvuRight[iL] = bestuR;
+        vDistIdx.push_back(pair<int,int>(bestDist,iL));
+        matches.emplace_back(iL, bestIdxR, 1, bestDist);
     }
 
     sort(vDistIdx.begin(),vDistIdx.end());
@@ -972,12 +974,16 @@ void Frame::ComputeStereoMatches()
     {
         if(vDistIdx[i].first<thDist)
             break;
-        else
-        {
-            mvuRight[vDistIdx[i].second]=-1;
-            mvDepth[vDistIdx[i].second]=-1;
-        }
+        mvuRight[vDistIdx[i].second] = -1;
+        mvDepth [vDistIdx[i].second] = -1;
     }
+
+    cv::Mat matchImg;
+    cv::drawMatches(extractorL->mvImagePyramid[0], mvKeys,
+                    extractorR->mvImagePyramid[0], mvKeysRight,
+                    matches, matchImg);
+    cv::imshow("matches", matchImg);
+    cv::waitKey(10);
 }
 
 
