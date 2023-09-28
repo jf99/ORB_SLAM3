@@ -1186,7 +1186,7 @@ void Frame::ComputeStereoFishEyeMatches()
             mvStereo3Dpoints[indexL] = p3D;
             mvDepth[indexL] = depth;
             nMatches++;
-            passedMatches.emplace_back(indexL, indexR, bestDist);
+            passedMatches.emplace_back(indexL, indexR, it->front().distance);
         }
     }
 
