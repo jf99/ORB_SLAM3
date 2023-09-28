@@ -1195,7 +1195,7 @@ void Frame::ComputeStereoFishEyeMatches()
     // DEBUG
     std::cout << "Out of " << matches.size() << " initial matches, "
                            << numLowesMatches << " passed the Lowe test, "
-                           << passedMatches << " had positive depth" << std::endl;
+                           << passedMatches.size() << " had positive depth" << std::endl;
     cv::Mat matchImg;
     cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
                     mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
