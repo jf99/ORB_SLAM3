@@ -1141,26 +1141,27 @@ void Frame::setIntegrated()
 
 void Frame::ComputeStereoFishEyeMatches()
 {
+    std::cout << "\nComputeStereoFishEyeMatches()\n";
+    std::cout << "left  keypoints: " << monoLeft  << " of " << mvKeys.size() << " are mono\n";
+    std::cout << "right keypoints: " << monoRight << " of " << mvKeysRight.size() << " are mono" << std::endl;
+
     //Speed it up by matching keypoints in the lapping area
-    vector<cv::KeyPoint> stereoLeft(mvKeys.begin() + monoLeft, mvKeys.end());
-    vector<cv::KeyPoint> stereoRight(mvKeysRight.begin() + monoRight, mvKeysRight.end());
+//    vector<cv::KeyPoint> stereoLeft(mvKeys.begin() + monoLeft, mvKeys.end());  // unused
+//    vector<cv::KeyPoint> stereoRight(mvKeysRight.begin() + monoRight, mvKeysRight.end());  // unused
 
     cv::Mat stereoDescLeft = mDescriptors.rowRange(monoLeft, mDescriptors.rows);
     cv::Mat stereoDescRight = mDescriptorsRight.rowRange(monoRight, mDescriptorsRight.rows);
 
-    mvLeftToRightMatch = vector<int>(Nleft,-1);
+    mvLeftToRightMatch = vector<int>(Nleft, -1);
     mvRightToLeftMatch = vector<int>(Nright,-1);
-    mvDepth = vector<float>(Nleft,-1.0f);
-    mvuRight = vector<float>(Nleft,-1);
+    mvDepth = vector<float>(Nleft, -1.f);
+    mvuRight = vector<float>(Nleft,-1.f);
     mvStereo3Dpoints = vector<Eigen::Vector3f>(Nleft);
     mnCloseMPs = 0;
 
     //Perform a brute force between Keypoint in the left and right image
     vector<vector<cv::DMatch>> matches;
     BFmatcher.knnMatch(stereoDescLeft, stereoDescRight, matches, 2);
-
-    int nMatches = 0;
-    int descMatches = 0;
 
     //Check matches using Lowe's ratio
     std::vector<cv::DMatch> passedMatches;
@@ -1169,9 +1170,10 @@ void Frame::ComputeStereoFishEyeMatches()
         if(it->size() < 2 || (*it)[0].distance >= (*it)[1].distance * 0.7)
             continue;
 
+        std::cout << it->size() << std::endl;  // There seems to be a for loop necessary here
+
         //For every good match, check parallax and reprojection error to discard spurious matches
         Eigen::Vector3f p3D;
-        descMatches++;
         const int indexL = (*it)[0].queryIdx + monoLeft;
         const int indexR = (*it)[0].trainIdx + monoRight;
         const float sigma1 = mvLevelSigma2[mvKeys[indexL].octave];
@@ -1185,7 +1187,6 @@ void Frame::ComputeStereoFishEyeMatches()
             mvRightToLeftMatch[indexR] = indexL;
             mvStereo3Dpoints[indexL] = p3D;
             mvDepth[indexL] = depth;
-            nMatches++;
             passedMatches.emplace_back(indexL, indexR, it->front().distance);
         }
     }
