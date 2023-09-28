@@ -1163,14 +1163,15 @@ void Frame::ComputeStereoFishEyeMatches()
     vector<vector<cv::DMatch>> matches;
     BFmatcher.knnMatch(stereoDescLeft, stereoDescRight, matches, 2);
 
+    int numLowesMatches = 0;
+
     //Check matches using Lowe's ratio
     std::vector<cv::DMatch> passedMatches;
     passedMatches.reserve(Nleft);
     for(vector<vector<cv::DMatch>>::iterator it = matches.begin(); it != matches.end(); ++it) {
         if(it->size() < 2 || (*it)[0].distance >= (*it)[1].distance * 0.7)
             continue;
-
-        std::cout << it->size() << std::endl;  // There seems to be a for loop necessary here
+        ++numLowesMatches;
 
         //For every good match, check parallax and reprojection error to discard spurious matches
         Eigen::Vector3f p3D;
@@ -1192,6 +1193,9 @@ void Frame::ComputeStereoFishEyeMatches()
     }
 
     // DEBUG
+    std::cout << "Out of " << matches.size() << " initial matches, "
+                           << numLowesMatches << " passed the Lowe test, "
+                           << passedMatches << " had positive depth" << std::endl;
     cv::Mat matchImg;
     cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
                     mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
