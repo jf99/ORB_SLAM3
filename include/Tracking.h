@@ -42,6 +42,8 @@
 #include <mutex>
 #include <unordered_set>
 
+class LightGlueMatcherOnnx;
+
 namespace ORB_SLAM3
 {
 
@@ -60,13 +62,13 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     Tracking(System* pSys, ORBVocabulary* pVoc, FrameDrawer* pFrameDrawer, MapDrawer* pMapDrawer, Atlas* pAtlas,
              KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq=std::string());
-
     ~Tracking();
 
     // Parse the config file
     bool ParseCamParamFile(cv::FileStorage &fSettings);
     bool ParseORBParamFile(cv::FileStorage &fSettings);
     bool ParseIMUParamFile(cv::FileStorage &fSettings);
+    bool ParseMatcherParamFile(cv::FileStorage &fSettings);
 
     // Preprocess the input and call Track(). Extract features and performs stereo matching.
     Sophus::SE3f GrabImageStereo(const cv::Mat &imRectLeft,const cv::Mat &imRectRight, const double &timestamp, string filename);
@@ -260,6 +262,8 @@ protected:
     //ORB
     ORBextractor* mpORBextractorLeft, *mpORBextractorRight;
     ORBextractor* mpIniORBextractor;
+
+    std::unique_ptr<LightGlueMatcherOnnx> m_matcher;
 
     //BoW
     ORBVocabulary* mpORBVocabulary;

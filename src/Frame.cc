@@ -30,6 +30,8 @@
 #include <include/CameraModels/Pinhole.h>
 #include <include/CameraModels/KannalaBrandt8.h>
 
+#include <lightgluematcheronnx.h>
+
 namespace ORB_SLAM3
 {
 
@@ -200,11 +202,11 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
 // Stereo fisheye
 Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp,
-             ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc,
+             ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, LightGlueMatcherOnnx* lightGlueMatcher,
              cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth,
              GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr,
              Frame* pPrevF, const IMU::Calib &ImuCalib)
-  : mpORBvocabulary(voc), mpORBextractorLeft(extractorLeft), mpORBextractorRight(extractorRight), mTimeStamp(timeStamp),
+  : mpORBvocabulary(voc), mpORBextractorLeft(extractorLeft), mpORBextractorRight(extractorRight), m_lightGlueMatcher(lightGlueMatcher), mTimeStamp(timeStamp),
     mK(K.clone()), mK_(Converter::toMatrix3f(K)),  mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
     mImuCalib(ImuCalib), mpPrevFrame(pPrevF), mbImuPreintegrated(false), mpCamera(pCamera), mpCamera2(pCamera2),
     mbHasPose(false), mbHasVelocity(false)
@@ -1193,6 +1195,19 @@ void Frame::ComputeStereoFishEyeMatches()
     }
 
     // DEBUG
+    if(m_lightGlueMatcher) {
+        std::cout << "number of keypoints: " << mvKeys.size() << ", " << mvKeysRight.size() << std::endl;
+        std::cout << "number of descriptors: " << stereoDescLeft.rows << ", " << stereoDescRight.rows << std::endl;
+        try {
+            passedMatches = m_lightGlueMatcher->infer(stereoDescLeft, stereoDescRight,
+                                                      mvKeys, mvKeysRight,
+                                                      imgLeft.size());
+        }
+        catch(std::exception& e) {
+            std::cerr << "excxeption: " << e.what() << std::endl;
+        }
+    }
+
     std::cout << "Out of " << matches.size() << " initial matches, "
                            << numLowesMatches << " passed the Lowe test, "
                            << passedMatches.size() << " had positive depth" << std::endl;

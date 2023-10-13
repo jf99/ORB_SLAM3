@@ -34,6 +34,7 @@
 #include <mutex>
 #include <chrono>
 
+#include <lightgluematcheronnx.h>
 
 using namespace std;
 
@@ -41,8 +42,9 @@ namespace ORB_SLAM3
 {
 
 
-Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas, KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq):
-    mState(NO_IMAGES_YET), mSensor(sensor), mTrackedFr(0), mbStep(false),
+Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer, MapDrawer *pMapDrawer, Atlas *pAtlas,
+                   KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq)
+  : mState(NO_IMAGES_YET), mSensor(sensor), mTrackedFr(0), mbStep(false),
     mbOnlyTracking(false), mbMapUpdated(false), mbVO(false), mpORBVocabulary(pVoc), mpKeyFrameDB(pKFDB),
     mbReadyToInitializate(false), mpSystem(pSys), mpViewer(NULL), bStepByStep(false),
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
@@ -80,7 +82,13 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
             mnFramesToResetIMU = mMaxFrames;
         }
 
-        if(!b_parse_cam || !b_parse_orb || !b_parse_imu)
+        bool b_parse_matcher = ParseMatcherParamFile(fSettings);
+        if(!b_parse_matcher)
+        {
+            std::cout << "*Error with the matcher parameters in the config file*" << std::endl;
+        }
+
+        if(!b_parse_cam || !b_parse_orb || !b_parse_imu || !b_parse_matcher)
         {
             std::cerr << "**ERROR in the config file, the format is not correct**" << std::endl;
             try
@@ -1213,7 +1221,6 @@ bool Tracking::ParseCamParamFile(cv::FileStorage &fSettings)
 
     return true;
 }
-
 bool Tracking::ParseORBParamFile(cv::FileStorage &fSettings)
 {
     bool b_miss_params = false;
@@ -1297,7 +1304,6 @@ bool Tracking::ParseORBParamFile(cv::FileStorage &fSettings)
 
     return true;
 }
-
 bool Tracking::ParseIMUParamFile(cv::FileStorage &fSettings)
 {
     bool b_miss_params = false;
@@ -1423,6 +1429,49 @@ bool Tracking::ParseIMUParamFile(cv::FileStorage &fSettings)
 
     return true;
 }
+bool Tracking::ParseMatcherParamFile(cv::FileStorage &fSettings)
+{
+    auto node = fSettings["Matcher.type"];
+    if(node.empty())
+        return false;
+    const std::string type = node.string();
+    if(type == "LightGlue") {
+        node = fSettings["Matcher.onnxFilename"];
+        if(node.empty())
+            return false;
+        const std::string onnxFilename = node.string();
+
+        node = fSettings["Matcher.cudaDevice"];
+        if(node.empty())
+            return false;
+        const int cudaDevice = node.real();
+
+        node = fSettings["Matcher.realizationFactor"];
+        if(node.empty())
+            return false;
+        const float realizationFactor = node.real();
+
+        node = fSettings["Matcher.scoreThreshold"];
+        if(node.empty())
+            return false;
+        const float scoreThreshold = node.real();
+
+        if(!mpORBextractorLeft)
+            return false;
+
+        m_matcher = std::make_unique<LightGlueMatcherOnnx>(onnxFilename, mpORBextractorLeft->GetNFeatures(), cudaDevice);
+        m_matcher->setRealizationFactor(realizationFactor);
+        m_matcher->setScoreThreshold(scoreThreshold);
+    }
+    else if(type == "BF") {
+        // TODO Lowe's filtering?
+    }
+    else {
+        return false;
+    }
+
+    return true;
+}
 
 void Tracking::SetLocalMapper(LocalMapping *pLocalMapper)
 {
@@ -1493,7 +1542,7 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
     if (mSensor == System::STEREO && !mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
     else if(mSensor == System::STEREO && mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr);
+        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,m_matcher.get(),mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr);
     else if(mSensor == System::IMU_STEREO && !mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);
     else if(mSensor == System::IMU_STEREO && mpCamera2)

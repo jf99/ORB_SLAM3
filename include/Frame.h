@@ -39,6 +39,8 @@
 #include "Eigen/Core"
 #include "sophus/se3.hpp"
 
+class LightGlueMatcherOnnx;
+
 namespace ORB_SLAM3
 {
 #define FRAME_GRID_ROWS 48
@@ -62,7 +64,7 @@ public:
     Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF = nullptr, const IMU::Calib &ImuCalib = IMU::Calib());
 
     // Constructor for stereo fisheye cameras.
-    Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr, Frame* pPrevF = nullptr, const IMU::Calib &ImuCalib = IMU::Calib());
+    Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp, ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, LightGlueMatcherOnnx* lightGlueMatcher, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, GeometricCamera* pCamera2, Sophus::SE3f& Tlr, Frame* pPrevF = nullptr, const IMU::Calib &ImuCalib = IMU::Calib());
 
     // Constructor for RGB-D cameras.
     Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera,Frame* pPrevF = static_cast<Frame*>(NULL), const IMU::Calib &ImuCalib = IMU::Calib());
@@ -197,6 +199,8 @@ public:
     // Feature extractor. The right is used only in the stereo case.
     ORBextractor* mpORBextractorLeft = nullptr;
     ORBextractor* mpORBextractorRight = nullptr;
+
+    LightGlueMatcherOnnx* m_lightGlueMatcher = nullptr;
 
     // Frame timestamp.
     double mTimeStamp;
