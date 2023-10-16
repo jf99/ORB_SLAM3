@@ -1198,10 +1198,18 @@ void Frame::ComputeStereoFishEyeMatches()
     if(m_lightGlueMatcher) {
         std::cout << "number of keypoints: " << mvKeys.size() << ", " << mvKeysRight.size() << std::endl;
         std::cout << "number of descriptors: " << stereoDescLeft.rows << ", " << stereoDescRight.rows << std::endl;
+
+        std::vector<cv::KeyPoint> stereoKeypointsL, stereoKeypointsR;
+        stereoKeypointsL.insert(stereoKeypointsL.end(), mvKeys.cbegin() + monoLeft, mvKeys.cend());
+        stereoKeypointsR.insert(stereoKeypointsR.end(), mvKeysRight.cbegin() + monoRight, mvKeysRight.cend());
         try {
             passedMatches = m_lightGlueMatcher->infer(stereoDescLeft, stereoDescRight,
-                                                      mvKeys, mvKeysRight,
+                                                      stereoKeypointsL, stereoKeypointsR,
                                                       imgLeft.size());
+            for(auto& match : passedMatches) {
+                match.queryIdx += monoLeft;
+                match.trainIdx += monoRight;
+            }
         }
         catch(std::exception& e) {
             std::cerr << "excxeption: " << e.what() << std::endl;
