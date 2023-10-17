@@ -1969,12 +1969,10 @@ namespace ORB_SLAM3
                         if(mbCheckOrientation)
                         {
                             float rot = pKF->mvKeysUn[i].angle-CurrentFrame.mvKeysUn[bestIdx2].angle;
-                            if(rot<0.0)
-                                rot+=360.0f;
-                            int bin = round(rot*factor);
-                            if(bin==HISTO_LENGTH)
-                                bin=0;
-                            assert(bin>=0 && bin<HISTO_LENGTH);
+                            if(rot < 0.0)
+                                rot += 360.0f;
+                            size_t bin = round(rot * factor);
+                            bin = bin % HISTO_LENGTH;
                             rotHist[bin].push_back(bestIdx2);
                         }
                     }
