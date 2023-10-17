@@ -1143,17 +1143,6 @@ void Frame::setIntegrated()
 
 void Frame::ComputeStereoFishEyeMatches()
 {
-    std::cout << "\nComputeStereoFishEyeMatches()\n";
-    std::cout << "left  keypoints: " << monoLeft  << " of " << mvKeys.size() << " are mono\n";
-    std::cout << "right keypoints: " << monoRight << " of " << mvKeysRight.size() << " are mono" << std::endl;
-
-    //Speed it up by matching keypoints in the lapping area
-//    vector<cv::KeyPoint> stereoLeft(mvKeys.begin() + monoLeft, mvKeys.end());  // unused
-//    vector<cv::KeyPoint> stereoRight(mvKeysRight.begin() + monoRight, mvKeysRight.end());  // unused
-
-    cv::Mat stereoDescLeft = mDescriptors.rowRange(monoLeft, mDescriptors.rows);
-    cv::Mat stereoDescRight = mDescriptorsRight.rowRange(monoRight, mDescriptorsRight.rows);
-
     mvLeftToRightMatch = vector<int>(Nleft, -1);
     mvRightToLeftMatch = vector<int>(Nright,-1);
     mvDepth = vector<float>(Nleft, -1.f);
@@ -1161,70 +1150,77 @@ void Frame::ComputeStereoFishEyeMatches()
     mvStereo3Dpoints = vector<Eigen::Vector3f>(Nleft);
     mnCloseMPs = 0;
 
-    //Perform a brute force between Keypoint in the left and right image
-    vector<vector<cv::DMatch>> matches;
-    BFmatcher.knnMatch(stereoDescLeft, stereoDescRight, matches, 2);
-
-    int numLowesMatches = 0;
-
-    //Check matches using Lowe's ratio
-    std::vector<cv::DMatch> passedMatches;
-    passedMatches.reserve(Nleft);
-    for(vector<vector<cv::DMatch>>::iterator it = matches.begin(); it != matches.end(); ++it) {
-        if(it->size() < 2 || (*it)[0].distance >= (*it)[1].distance * 0.7)
-            continue;
-        ++numLowesMatches;
-
-        //For every good match, check parallax and reprojection error to discard spurious matches
+    auto addMatchIfDepthIsPositive = [this](const cv::DMatch& match, const int queryOffset, const int trainOffset) -> bool {
         Eigen::Vector3f p3D;
-        const int indexL = (*it)[0].queryIdx + monoLeft;
-        const int indexR = (*it)[0].trainIdx + monoRight;
+        const int indexL = match.queryIdx + queryOffset;
+        const int indexR = match.trainIdx + trainOffset;
         const float sigma1 = mvLevelSigma2[mvKeys[indexL].octave];
         const float sigma2 = mvLevelSigma2[mvKeysRight[indexR].octave];
         const float depth = static_cast<KannalaBrandt8*>(mpCamera)->TriangulateMatches(mpCamera2,
                                                                                        mvKeys     [indexL],
                                                                                        mvKeysRight[indexR],
                                                                                        mRlr, mtlr, sigma1, sigma2, p3D);
-        if(depth > 0.0001f) {
-            mvLeftToRightMatch[indexL]  = indexR;
-            mvRightToLeftMatch[indexR] = indexL;
-            mvStereo3Dpoints[indexL] = p3D;
-            mvDepth[indexL] = depth;
-            passedMatches.emplace_back(indexL, indexR, it->front().distance);
-        }
-    }
+        if(depth <= 0.0001f)
+            return false;
 
-    // DEBUG
+        mvLeftToRightMatch[indexL]  = indexR;
+        mvRightToLeftMatch[indexR] = indexL;
+        mvStereo3Dpoints[indexL] = p3D;
+        mvDepth[indexL] = depth;
+        return true;
+    };
+
     if(m_lightGlueMatcher) {
-        std::cout << "number of keypoints: " << mvKeys.size() << ", " << mvKeysRight.size() << std::endl;
-        std::cout << "number of descriptors: " << mDescriptors.rows << ", " << mDescriptorsRight.rows << std::endl;
-
-//        std::vector<cv::KeyPoint> stereoKeypointsL, stereoKeypointsR;
-//        stereoKeypointsL.insert(stereoKeypointsL.end(), mvKeys.cbegin() + monoLeft, mvKeys.cend());
-//        stereoKeypointsR.insert(stereoKeypointsR.end(), mvKeysRight.cbegin() + monoRight, mvKeysRight.cend());
+        std::vector<cv::DMatch> matches;
         try {
-            passedMatches = m_lightGlueMatcher->infer(mDescriptors, mDescriptorsRight,
-                                                      mvKeys, mvKeysRight,
-                                                      imgLeft.size());
-//            for(auto& match : passedMatches) {
-//                match.queryIdx += monoLeft;
-//                match.trainIdx += monoRight;
-//            }
+            matches = m_lightGlueMatcher->infer(mDescriptors, mDescriptorsRight,
+                                                mvKeys, mvKeysRight,
+                                                imgLeft.size());
         }
         catch(std::exception& e) {
             std::cerr << "excxeption: " << e.what() << std::endl;
         }
+
+        int numPassedMatches = 0;
+        for(const auto& match : matches) {
+            numPassedMatches += addMatchIfDepthIsPositive(match, 0, 0);
+        }
+        std::cout << "Out of " << matches.size() << " initial LightGlue matches, "
+                               << numPassedMatches << " had positive depth" << std::endl;
+    }
+    else {
+        // Speed it up by matching keypoints in the lapping area
+        cv::Mat stereoDescLeft = mDescriptors.rowRange(monoLeft, mDescriptors.rows);
+        cv::Mat stereoDescRight = mDescriptorsRight.rowRange(monoRight, mDescriptorsRight.rows);
+
+        vector<vector<cv::DMatch>> matches;
+        BFmatcher.knnMatch(stereoDescLeft, stereoDescRight, matches, 2);
+
+        //Check matches using Lowe's ratio
+        int numLowesMatches = 0, numPassedMatches = 0;
+        for(auto it = matches.begin(); it != matches.end(); ++it) {
+            if(it->size() < 2 || (*it)[0].distance >= (*it)[1].distance * 0.7)
+                continue;
+            ++numLowesMatches;
+            numPassedMatches += addMatchIfDepthIsPositive((*it)[0], monoLeft, monoRight);
+        }
+
+        std::cout << "Out of " << matches.size() << " initial matches, "
+                               << numLowesMatches << " passed the Lowe test, "
+                               << numPassedMatches << " had positive depth" << std::endl;
     }
 
-    std::cout << "Out of " << matches.size() << " initial matches, "
-                           << numLowesMatches << " passed the Lowe test, "
-                           << passedMatches.size() << " had positive depth" << std::endl;
-    cv::Mat matchImg;
-    cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
-                    mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
-                    passedMatches, matchImg);
-    cv::imshow("matches", matchImg);
-    cv::waitKey(10);
+    // TODO
+//    std::vector<cv::DMatch> passedMatches;
+//    passedMatches.reserve(Nleft);
+
+    // DEBUG
+//    cv::Mat matchImg;
+//    cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
+//                    mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
+//                    passedMatches, matchImg);
+//    cv::imshow("matches", matchImg);
+//    cv::waitKey(10);
 }
 
 bool Frame::isInFrustumChecks(MapPoint *pMP, float viewingCosLimit, bool bRight) {
