@@ -1160,8 +1160,10 @@ void Frame::ComputeStereoFishEyeMatches()
                                                                                        mvKeys     [indexL],
                                                                                        mvKeysRight[indexR],
                                                                                        mRlr, mtlr, sigma1, sigma2, p3D);
-        if(depth <= 0.0001f)
+        if(depth <= 0.0001f) {
+            std::cout << "too small depth " << depth << std::endl;
             return false;
+        }
 
         mvLeftToRightMatch[indexL]  = indexR;
         mvRightToLeftMatch[indexR] = indexL;
@@ -1186,7 +1188,7 @@ void Frame::ComputeStereoFishEyeMatches()
             numPassedMatches += addMatchIfDepthIsPositive(match, 0, 0);
         }
         std::cout << "Out of " << matches.size() << " initial LightGlue matches, "
-                               << numPassedMatches << " had positive depth" << std::endl;
+                               << numPassedMatches << " had sufficiently large depth" << std::endl;
     }
     else {
         // Speed it up by matching keypoints in the lapping area
@@ -1207,7 +1209,7 @@ void Frame::ComputeStereoFishEyeMatches()
 
         std::cout << "Out of " << matches.size() << " initial matches, "
                                << numLowesMatches << " passed the Lowe test, "
-                               << numPassedMatches << " had positive depth" << std::endl;
+                               << numPassedMatches << " had sufficiently large depth" << std::endl;
     }
 
     // TODO
