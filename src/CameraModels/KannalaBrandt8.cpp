@@ -352,25 +352,24 @@ namespace ORB_SLAM3 {
         //Check reprojection error
         Eigen::Vector2f uv1 = this->project(x3D);
 
-        float errX1 = uv1(0) - kp1.pt.x;
-        float errY1 = uv1(1) - kp1.pt.y;
-
-        if((errX1*errX1+errY1*errY1)>5.991 * sigmaLevel){   //Reprojection error is high
+        const float errX1 = uv1(0) - kp1.pt.x;
+        const float errY1 = uv1(1) - kp1.pt.y;
+        const float sqreErr1 = errX1*errX1 + errY1*errY1;
+        if(sqreErr1 > 5.991 * sigmaLevel) {   //Reprojection error is high
             return -4;
         }
 
         Eigen::Vector3f x3D2 = R21 * x3D + Tcw2.col(3);
         Eigen::Vector2f uv2 = pCamera2->project(x3D2);
 
-        float errX2 = uv2(0) - kp2.pt.x;
-        float errY2 = uv2(1) - kp2.pt.y;
-
-        if((errX2*errX2+errY2*errY2)>5.991 * unc){   //Reprojection error is high
+        const float errX2 = uv2(0) - kp2.pt.x;
+        const float errY2 = uv2(1) - kp2.pt.y;
+        const float sqreErr2 = errX2*errX2 + errY2*errY2;
+        if(sqreErr2 > 5.991 * unc) {   //Reprojection error is high
             return -5;
         }
 
         p3D = x3D;
-
         return z1;
     }
 
