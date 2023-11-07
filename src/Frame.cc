@@ -101,9 +101,10 @@ Frame::Frame(const Frame &frame)
 
 // Stereo
 Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeStamp,
-             ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc,
-             cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF, const IMU::Calib &ImuCalib)
-  : mpORBvocabulary(voc), mpORBextractorLeft(extractorLeft), mpORBextractorRight(extractorRight), mTimeStamp(timeStamp),
+             ORBextractor* extractorLeft, ORBextractor* extractorRight, ORBVocabulary* voc, LightGlueMatcherOnnx* lightGlueMatcher,
+             cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth, GeometricCamera* pCamera, Frame* pPrevF,
+             const IMU::Calib &ImuCalib, const float visualizationScale)
+  : mpORBvocabulary(voc), mpORBextractorLeft(extractorLeft), mpORBextractorRight(extractorRight), m_lightGlueMatcher(lightGlueMatcher), mTimeStamp(timeStamp),
     mK(K.clone()), mK_(Converter::toMatrix3f(K)), mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
     mImuCalib(ImuCalib), mpPrevFrame(pPrevF), mbIsSet(false), mbImuPreintegrated(false),
     mpCamera(pCamera), mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false)
@@ -143,7 +144,7 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_StartStereoMatches = std::chrono::steady_clock::now();
 #endif
-    ComputeStereoMatches();
+    ComputeStereoMatches(visualizationScale);
 #ifdef REGISTER_TIMES
     std::chrono::steady_clock::time_point time_EndStereoMatches = std::chrono::steady_clock::now();
 
@@ -213,8 +214,6 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
 {
     // TODO why are these 2 assignments in this ctor, but not in the other stereo-ctor?
-    // TODO why is ComputeStereoMatches(); missing here?
-    // Hint: this is the ctor used in reality
     imgLeft = imLeft.clone();
     imgRight = imRight.clone();
 
@@ -912,7 +911,7 @@ void Frame::ComputeImageBounds(const cv::Mat &imLeft)
     }
 }
 
-void Frame::ComputeStereoMatches()
+void Frame::ComputeStereoMatches(const float visualizationScale)
 {
     // DEBUG
     std::vector<cv::DMatch> matches;
@@ -921,171 +920,176 @@ void Frame::ComputeStereoMatches()
     mvuRight = vector<float>(N,-1.0f);
     mvDepth = vector<float>(N,-1.0f);
 
-    const int thOrbDist = (ORBmatcher::TH_HIGH+ORBmatcher::TH_LOW)/2;
+    if(m_lightGlueMatcher) {
+        try {
+            matches = m_lightGlueMatcher->infer(mDescriptors, mDescriptorsRight,
+                                                mvKeys, mvKeysRight,
+                                                imgLeft.size());
+        }
+        catch(std::exception& e) {
+            std::cerr << "excxeption: " << e.what() << std::endl;
+        }
 
-    const int nRows = mpORBextractorLeft->mvImagePyramid[0].rows;
-
-    //Assign keypoints to row table
-    vector<vector<size_t> > vRowIndices(nRows,vector<size_t>());
-
-    for(int i=0; i<nRows; i++)
-        vRowIndices[i].reserve(200);
-
-    const int Nr = mvKeysRight.size();
-
-    for(int iR=0; iR<Nr; iR++)
-    {
-        const cv::KeyPoint &kp = mvKeysRight[iR];
-        const float &kpY = kp.pt.y;
-        const float r = 2.0f*mvScaleFactors[mvKeysRight[iR].octave];
-        const int maxr = ceil(kpY+r);
-        const int minr = floor(kpY-r);
-
-        for(int yi=minr;yi<=maxr;yi++)
-            vRowIndices[yi].push_back(iR);
+        int numPassedMatches = 0;
+        for(const auto& match : matches) {
+            const float disparity = mvKeys[match.queryIdx].pt.x - mvKeysRight[match.trainIdx].pt.x;
+            mvDepth [match.queryIdx] = mbf / disparity;
+            mvuRight[match.queryIdx] = mvKeysRight[match.trainIdx].pt.x;
+        }
+        std::cout << "Out of " << matches.size() << " initial LightGlue matches, "
+                               << numPassedMatches << " had sufficiently large depth" << std::endl;
     }
+    else {
+        const int thOrbDist = (ORBmatcher::TH_HIGH+ORBmatcher::TH_LOW)/2;
+        const int nRows = mpORBextractorLeft->mvImagePyramid[0].rows;
 
-    // Set limits for search
-    const float minZ = mb;
-    const float minD = 0;
-    const float maxD = mbf/minZ;
+        //Assign keypoints to row table
+        vector<vector<size_t> > vRowIndices(nRows,vector<size_t>());
+        for(int i=0; i<nRows; i++)
+            vRowIndices[i].reserve(200);
 
-    // For each left keypoint search a match in the right image
-    vector<pair<int, int> > vDistIdx;
-    vDistIdx.reserve(N);
+        const int Nr = mvKeysRight.size();
+        for(int iR=0; iR<Nr; iR++) {
+            const cv::KeyPoint &kp = mvKeysRight[iR];
+            const float &kpY = kp.pt.y;
+            const float r = 2.0f * mvScaleFactors[mvKeysRight[iR].octave];
+            const int maxr = ceil(kpY+r);
+            const int minr = floor(kpY-r);
 
-    for(int iL=0; iL<N; iL++)
-    {
-        const cv::KeyPoint &kpL = mvKeys[iL];
-        const int &levelL = kpL.octave;
-        const float &vL = kpL.pt.y;
-        const float &uL = kpL.pt.x;
+            for(int yi=minr;yi<=maxr;yi++)
+                vRowIndices[yi].push_back(iR);
+        }
 
-        const vector<size_t> &vCandidates = vRowIndices[vL];
+        // Set limits for search
+        const float minZ = mb;
+        const float minD = 0;
+        const float maxD = mbf/minZ;
 
-        if(vCandidates.empty())
-            continue;
+        // For each left keypoint search a match in the right image
+        vector<pair<int, int> > vDistIdx;
+        vDistIdx.reserve(N);
+        for(int iL=0; iL<N; iL++) {
+            const cv::KeyPoint &kpL = mvKeys[iL];
+            const int &levelL = kpL.octave;
+            const float &vL = kpL.pt.y;
+            const float &uL = kpL.pt.x;
 
-        const float minU = uL-maxD;
-        const float maxU = uL-minD;
-
-        if(maxU<0)
-            continue;
-
-        int bestDist = ORBmatcher::TH_HIGH;
-        size_t bestIdxR = 0;
-
-        const cv::Mat &dL = mDescriptors.row(iL);
-
-        // Compare descriptor to right keypoints
-        for(size_t iC=0; iC<vCandidates.size(); iC++)
-        {
-            const size_t iR = vCandidates[iC];
-            const cv::KeyPoint &kpR = mvKeysRight[iR];
-
-            if(kpR.octave<levelL-1 || kpR.octave>levelL+1)
+            const vector<size_t> &vCandidates = vRowIndices[vL];
+            if(vCandidates.empty())
                 continue;
 
-            const float &uR = kpR.pt.x;
-            if(uR < minU || uR > maxU)
+            const float minU = uL-maxD;
+            const float maxU = uL-minD;
+            if(maxU < 0)
                 continue;
 
-            const cv::Mat &dR = mDescriptorsRight.row(iR);
-            const int dist = ORBmatcher::DescriptorDistance(dL,dR);
+            const cv::Mat &dL = mDescriptors.row(iL);
 
-            if(dist < bestDist)
-            {
-                bestDist = dist;
-                bestIdxR = iR;
-            }
-        }
+            int bestDist = ORBmatcher::TH_HIGH;
+            size_t bestIdxR = 0;
 
-        // Subpixel match by correlation
-        if(bestDist >= thOrbDist)
-            continue;
+            // Compare descriptor to right keypoints
+            for(size_t iC=0; iC<vCandidates.size(); iC++) {
+                const size_t iR = vCandidates[iC];
+                const cv::KeyPoint &kpR = mvKeysRight[iR];
+                if(kpR.octave<levelL-1 || kpR.octave>levelL+1)
+                    continue;
 
-        // coordinates in image pyramid at keypoint scale
-        const float uR0 = mvKeysRight[bestIdxR].pt.x;
-        const float scaleFactor = mvInvScaleFactors[kpL.octave];
-        const float scaleduL = round(kpL.pt.x*scaleFactor);
-        const float scaledvL = round(kpL.pt.y*scaleFactor);
-        const float scaleduR0 = round(uR0*scaleFactor);
+                const float &uR = kpR.pt.x;
+                if(uR < minU || uR > maxU)
+                    continue;
 
-        // sliding window search
-        const int w = 5;
-        cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
-
-        bestDist = INT_MAX;
-        int bestincR = 0;
-        const int L = 5;
-        vector<float> vDists;
-        vDists.resize(2*L+1);
-
-        const float iniu = scaleduR0+L-w;
-        const float endu = scaleduR0+L+w+1;
-        if(iniu<0 || endu >= mpORBextractorRight->mvImagePyramid[kpL.octave].cols)
-            continue;
-
-        for(int incR=-L; incR<=+L; incR++)
-        {
-            cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
-
-            float dist = cv::norm(IL,IR,cv::NORM_L1);
-            if(dist < bestDist)
-            {
-                bestDist =  dist;
-                bestincR = incR;
+                const cv::Mat &dR = mDescriptorsRight.row(iR);
+                const int dist = ORBmatcher::DescriptorDistance(dL,dR);
+                if(dist < bestDist) {
+                    bestDist = dist;
+                    bestIdxR = iR;
+                }
             }
 
-            vDists[L+incR] = dist;
+            // Subpixel match by correlation
+            if(bestDist >= thOrbDist)
+                continue;
+
+            // coordinates in image pyramid at keypoint scale
+            const float uR0 = mvKeysRight[bestIdxR].pt.x;
+            const float scaleFactor = mvInvScaleFactors[kpL.octave];
+            const float scaleduL = round(kpL.pt.x*scaleFactor);
+            const float scaledvL = round(kpL.pt.y*scaleFactor);
+            const float scaleduR0 = round(uR0*scaleFactor);
+
+            // sliding window search
+            const int w = 5;
+            cv::Mat IL = mpORBextractorLeft->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduL-w,scaleduL+w+1);
+
+            bestDist = INT_MAX;
+            int bestincR = 0;
+            const int L = 5;
+            vector<float> vDists;
+            vDists.resize(2*L+1);
+
+            const float iniu = scaleduR0+L-w;
+            const float endu = scaleduR0+L+w+1;
+            if(iniu<0 || endu >= mpORBextractorRight->mvImagePyramid[kpL.octave].cols)
+                continue;
+
+            for(int incR=-L; incR<=+L; incR++) {
+                cv::Mat IR = mpORBextractorRight->mvImagePyramid[kpL.octave].rowRange(scaledvL-w,scaledvL+w+1).colRange(scaleduR0+incR-w,scaleduR0+incR+w+1);
+
+                float dist = cv::norm(IL,IR,cv::NORM_L1);
+                if(dist < bestDist) {
+                    bestDist =  dist;
+                    bestincR = incR;
+                }
+
+                vDists[L+incR] = dist;
+            }
+
+            if(bestincR == -L || bestincR == L)
+                continue;
+
+            // Sub-pixel match (Parabola fitting)
+            const float dist1 = vDists[L+bestincR-1];
+            const float dist2 = vDists[L+bestincR];
+            const float dist3 = vDists[L+bestincR+1];
+
+            const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));
+            if(deltaR < -1 || deltaR > 1)
+                continue;
+
+            // Re-scaled coordinate
+            float bestuR = mvScaleFactors[kpL.octave]*((float)scaleduR0+(float)bestincR+deltaR);
+            float disparity = (uL-bestuR);
+            if(disparity < minD || disparity >= maxD)
+                continue;
+
+            if(disparity <= 0) {
+                disparity = 0.01;
+                bestuR = uL-0.01;
+            }
+            mvDepth[iL]=mbf/disparity;
+            mvuRight[iL] = bestuR;
+            vDistIdx.push_back(pair<int,int>(bestDist,iL));
+            matches.emplace_back(iL, bestIdxR, 1, bestDist);
         }
 
-        if(bestincR == -L || bestincR == L)
-            continue;
+        sort(vDistIdx.begin(),vDistIdx.end());
+        const float median = vDistIdx[vDistIdx.size()/2].first;
+        const float thDist = 1.5f*1.4f*median;
 
-        // Sub-pixel match (Parabola fitting)
-        const float dist1 = vDists[L+bestincR-1];
-        const float dist2 = vDists[L+bestincR];
-        const float dist3 = vDists[L+bestincR+1];
-
-        const float deltaR = (dist1-dist3)/(2.0f*(dist1+dist3-2.0f*dist2));
-        if(deltaR < -1 || deltaR > 1)
-            continue;
-
-        // Re-scaled coordinate
-        float bestuR = mvScaleFactors[kpL.octave]*((float)scaleduR0+(float)bestincR+deltaR);
-        float disparity = (uL-bestuR);
-
-        if(disparity < minD || disparity >= maxD)
-            continue;
-
-        if(disparity <= 0)
-        {
-            disparity = 0.01;
-            bestuR = uL-0.01;
+        for(int i=vDistIdx.size()-1; i>=0; i--) {
+            if(vDistIdx[i].first<thDist)
+                break;
+            mvuRight[vDistIdx[i].second] = -1;
+            mvDepth [vDistIdx[i].second] = -1;
         }
-        mvDepth[iL]=mbf/disparity;
-        mvuRight[iL] = bestuR;
-        vDistIdx.push_back(pair<int,int>(bestDist,iL));
-        matches.emplace_back(iL, bestIdxR, 1, bestDist);
-    }
-
-    sort(vDistIdx.begin(),vDistIdx.end());
-    const float median = vDistIdx[vDistIdx.size()/2].first;
-    const float thDist = 1.5f*1.4f*median;
-
-    for(int i=vDistIdx.size()-1;i>=0;i--)
-    {
-        if(vDistIdx[i].first<thDist)
-            break;
-        mvuRight[vDistIdx[i].second] = -1;
-        mvDepth [vDistIdx[i].second] = -1;
     }
 
     cv::Mat matchImg;
     cv::drawMatches(mpORBextractorLeft->mvImagePyramid[0],  mvKeys,
                     mpORBextractorRight->mvImagePyramid[0], mvKeysRight,
-                    matches, matchImg);
+                    matches, matchImg, std::ceil(1.f / visualizationScale));
+    cv:resize(matchImg, matchImg, cv::Size(), visualizationScale, visualizationScale);
     cv::imshow("matches", matchImg);
     cv::waitKey(10);
 }
@@ -1150,12 +1154,13 @@ void Frame::ComputeStereoFishEyeMatches()
     mvStereo3Dpoints = vector<Eigen::Vector3f>(Nleft);
     mnCloseMPs = 0;
 
-    auto addMatchIfDepthIsPositive = [this](const cv::DMatch& match, const int queryOffset, const int trainOffset) -> bool {
+    auto addMatchIfDepthIsPositive = [this](const cv::DMatch& match, const int queryOffset, const int trainOffset,
+                                            const float reprojToleranceFactor) -> bool {
         Eigen::Vector3f p3D;
         const int indexL = match.queryIdx + queryOffset;
         const int indexR = match.trainIdx + trainOffset;
-        const float sigma1 = mvLevelSigma2[mvKeys[indexL].octave];
-        const float sigma2 = mvLevelSigma2[mvKeysRight[indexR].octave];
+        const float sigma1 = mvLevelSigma2[mvKeys     [indexL].octave] * reprojToleranceFactor;
+        const float sigma2 = mvLevelSigma2[mvKeysRight[indexR].octave] * reprojToleranceFactor;
         const float depth = static_cast<KannalaBrandt8*>(mpCamera)->TriangulateMatches(mpCamera2,
                                                                                        mvKeys     [indexL],
                                                                                        mvKeysRight[indexR],
@@ -1185,7 +1190,7 @@ void Frame::ComputeStereoFishEyeMatches()
 
         int numPassedMatches = 0;
         for(const auto& match : matches) {
-            numPassedMatches += addMatchIfDepthIsPositive(match, 0, 0);
+            numPassedMatches += addMatchIfDepthIsPositive(match, 0, 0, 10.f);
         }
         std::cout << "Out of " << matches.size() << " initial LightGlue matches, "
                                << numPassedMatches << " had sufficiently large depth" << std::endl;
@@ -1204,7 +1209,7 @@ void Frame::ComputeStereoFishEyeMatches()
             if(it->size() < 2 || (*it)[0].distance >= (*it)[1].distance * 0.7)
                 continue;
             ++numLowesMatches;
-            numPassedMatches += addMatchIfDepthIsPositive((*it)[0], monoLeft, monoRight);
+            numPassedMatches += addMatchIfDepthIsPositive((*it)[0], monoLeft, monoRight, 10.f);
         }
 
         std::cout << "Out of " << matches.size() << " initial matches, "

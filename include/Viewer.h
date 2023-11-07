@@ -63,6 +63,8 @@ public:
 
     //void SetTrackingPause();
 
+    float imageViewerScale() const;
+
     bool both;
 private:
 
@@ -78,7 +80,7 @@ private:
     // 1/fps in ms
     double mT;
     float mImageWidth, mImageHeight;
-    float mImageViewerScale;
+    float mImageViewerScale = 1.f;
 
     float mViewpointX, mViewpointY, mViewpointZ, mViewpointF;
 

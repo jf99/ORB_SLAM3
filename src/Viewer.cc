@@ -74,6 +74,11 @@ void Viewer::newParameterLoader(Settings *settings) {
     mViewpointF = settings->viewPointF();
 }
 
+float Viewer::imageViewerScale() const
+{
+    return mImageViewerScale;
+}
+
 bool Viewer::ParseViewerParamFile(cv::FileStorage &fSettings)
 {
     bool b_miss_params = false;

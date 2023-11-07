@@ -1498,8 +1498,6 @@ bool Tracking::GetStepByStep()
     return bStepByStep;
 }
 
-
-
 Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp, string filename)
 {
     //cout << "GrabImageStereo" << endl;
@@ -1537,18 +1535,14 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
         }
     }
 
-    //cout << "Incoming frame creation" << endl;
-
     if (mSensor == System::STEREO && !mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera);
+        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,m_matcher.get(),mK,mDistCoef,mbf,mThDepth,mpCamera, nullptr, IMU::Calib(), mpViewer->imageViewerScale());
     else if(mSensor == System::STEREO && mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,m_matcher.get(),mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr);
     else if(mSensor == System::IMU_STEREO && !mpCamera2)
-        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib);
+        mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,m_matcher.get(),mK,mDistCoef,mbf,mThDepth,mpCamera,&mLastFrame,*mpImuCalib, mpViewer->imageViewerScale());
     else if(mSensor == System::IMU_STEREO && mpCamera2)
         mCurrentFrame = Frame(mImGray,imGrayRight,timestamp,mpORBextractorLeft,mpORBextractorRight,mpORBVocabulary,m_matcher.get(),mK,mDistCoef,mbf,mThDepth,mpCamera,mpCamera2,mTlr,&mLastFrame,*mpImuCalib);
-
-    //cout << "Incoming frame ended" << endl;
 
     mCurrentFrame.mNameFile = filename;
     mCurrentFrame.mnDataset = mnNumDataset;
@@ -1564,8 +1558,6 @@ Sophus::SE3f Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat 
 
     return mCurrentFrame.GetPose();
 }
-
-
 Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, const double &timestamp, string filename)
 {
     mImGray = imRGB;
@@ -1610,8 +1602,6 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
 
     return mCurrentFrame.GetPose();
 }
-
-
 Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp, string filename)
 {
     std::cerr << "GrabImageMonocular()" << std::endl;
@@ -1663,7 +1653,6 @@ Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &times
 
     return mCurrentFrame.GetPose();
 }
-
 
 void Tracking::GrabImuData(const IMU::Point &imuMeasurement)
 {
@@ -2496,8 +2485,6 @@ void Tracking::StereoInitialization()
         mState=OK;
     }
 }
-
-
 void Tracking::MonocularInitialization()
 {
     std::cerr << "MonocularInitialization()" << std::endl;
@@ -2578,8 +2565,6 @@ void Tracking::MonocularInitialization()
         std::cerr << "finished being ready to initialize" << std::endl;
     }
 }
-
-
 
 void Tracking::CreateInitialMapMonocular()
 {
@@ -2716,7 +2701,6 @@ void Tracking::CreateInitialMapMonocular()
 
     initID = pKFcur->mnId;
 }
-
 
 void Tracking::CreateMapInAtlas()
 {
